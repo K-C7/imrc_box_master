@@ -11,7 +11,7 @@ class BoxMaster(Node):
         super().__init__('box_manager')
         self.logger = self.get_logger()
 
-        self.gc_pub = self.create_publisher(GeneralCommand, '/lift_command', 10)
+        self.gc_pub = self.create_publisher(GeneralCommand, '/robot_command', 10)
         self.lift_progress = "IDLE"
         self.complete_sub = self.create_subscription(RobotActionProgress, '/robot_progress', 10)
 
