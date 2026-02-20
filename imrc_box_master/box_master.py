@@ -13,7 +13,7 @@ class BoxMaster(Node):
 
         self.gc_pub = self.create_publisher(GeneralCommand, '/robot_command', 10)
         self.lift_progress = "IDLE"
-        self.complete_sub = self.create_subscription(RobotActionProgress, '/robot_progress', 10)
+        self.complete_sub = self.create_subscription(RobotActionProgress, '/robot_progress', self.lift_progress_callback, 10)
 
         self.action_server = ActionServer(
             self,
