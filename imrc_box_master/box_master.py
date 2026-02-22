@@ -30,10 +30,13 @@ class BoxMaster(Node):
     def box_command_callback(self, goal_handle):
         gc = GeneralCommand()
         gc.target = "lift"
-        if(goal_handle.request.command == "up"):
+        if(goal_handle.request.command == "ready"):
             gc.param = 1
+        elif(goal_handle.request.command == "drop"):
+            gc.param = 2
         else:
-            gc.param = 0
+            self.logger.error("Action command is invalid. Given command is {0}".format(goal_handle.request.command))
+            gc.param = 3
         
         self.gc_pub.publish(gc)
 
@@ -42,6 +45,8 @@ class BoxMaster(Node):
         
         result = BoxCommand.Result()
         result.result = self.lift_progress
+
+        self.lift_progress = "IDLE"
 
         goal_handle.succeed()
         return result
