@@ -39,16 +39,21 @@ class BoxMaster(Node):
 
         while(self.lift_progress != 'OK'):
             rclpy.spin_once(self)
+        
+        result = BoxCommand.Result()
+        result.result = self.lift_progress
+
+        self.lift_progress = "IDLE"
 
         goal_handle.succeed()
-        return self.lift_progress
+        return result
 
 def main(args = None):
     rclpy.init(args=args)
-    uart_bridge = BoxMaster()
-    rclpy.spin(uart_bridge)
+    box_master = BoxMaster()
+    rclpy.spin(box_master)
 
-    uart_bridge.destroy_node()
+    box_master.destroy_node()
     rclpy.shutdown()
 
 
