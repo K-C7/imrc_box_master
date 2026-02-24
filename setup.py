@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            "box_master = box_master:main"
+            "box_master = imrc_box_master.box_master:main"
         ],
     },
 )

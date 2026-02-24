@@ -18,26 +18,27 @@ class BoxMaster(Node):
         self.action_server = ActionServer(
             self,
             BoxCommand,
-            self.box_command_callback
+            "box_master",
+            self.box_command_callback,
         )
     
     def lift_progress_callback(self, msg):
-        if(msg.target == "lift"):
+        if(msg.target == "ball"):
             self.lift_progress = msg.state
 
     
     def box_command_callback(self, goal_handle):
         gc = GeneralCommand()
-        gc.target = "lift"
-        if(goal_handle.request.command == "up"):
-            gc.param = 1
+        gc.target = "ball"
+        if(goal_handle.request.command == "drop"):
+            gc.param = 2
         else:
-            gc.param = 0
+            gc.param = 1
         
         self.gc_pub.publish(gc)
 
         while(self.lift_progress != 'OK'):
-            pass
+            rclpy.spin_once(self)
 
         goal_handle.succeed()
         return self.lift_progress
