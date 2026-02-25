@@ -43,6 +43,7 @@ class BoxMaster(Node):
         self.start_yaw = None
         self.target_yaw = None
         self.is_rotating = False
+        self.target_yaw = 0.0
 
         self.rotate_enable = False
 
@@ -129,27 +130,14 @@ class BoxMaster(Node):
         if self.start_yaw is None:
             self.start_yaw = self.current_yaw
 
-            if(self.rotate_mode == "flip"):
-                self.target_yaw = self.start_yaw + math.pi
-            elif(self.rotate_mode == "up"):
-                self.target_yaw = 0
-            elif(self.rotate_mode == "down"):
-                self.target_yaw = math.pi
-            elif(self.rotate_mode == "left"):
-                self.target_yaw = (math.pi / 2)
-            elif(self.rotate_mode == "down"):
-                self.target_yaw = (math.pi / 2) * 3
-            else:
-                self.target_yaw = self.start_yaw
-
             # 180度 (π) 加算
             # self.target_yaw = self.start_yaw + math.pi
             
             # 角度を -π から π の範囲に正規化
-            if self.target_yaw > math.pi:
-                self.target_yaw -= 2 * math.pi
-            elif self.target_yaw < -math.pi:
-                self.target_yaw += 2 * math.pi
+            # if self.target_yaw > math.pi:
+            #     self.target_yaw -= 2 * math.pi
+            # elif self.target_yaw < -math.pi:
+            #     self.target_yaw += 2 * math.pi
                 
             self.is_rotating = True
             self.get_logger().info(f'Start rotation! Target orientation is: {math.degrees(self.target_yaw):.2f} rad')
@@ -195,28 +183,28 @@ class BoxMaster(Node):
     
     
     def box_command_callback(self, goal_handle):
+        if(goal_handle.request.command.replace(".","").isdigit() == False):
+            self.get_logger().error("Action is invalid.")
+            return
+        
+        self.target_yaw = float(goal_handle.request.command)
+        
+        self.rotate_enable = True
+        while(self.rotate_enable == True):
+            rclpy.spin_once(self)
+
+        self.alignment_enable = True
+        while(self.alignment_enable == True):
+            rclpy.spin_once(self)
+
+        self.target_yaw += math.pi
+        self.rotate_enable = True
+        while(self.rotate_enable == True):
+            rclpy.spin_once(self)
+        
         gc = GeneralCommand()
         gc.target = "ball"
-        if(goal_handle.request.command == "ready"):
-            gc.param = 1
-        elif(goal_handle.request.command == "drop"):
-            self.rotate_mode = "up"
-            self.rotate_enable = True
-            while(self.rotate_enable == True):
-                rclpy.spin_once(self)
-
-            self.alignment_enable = True
-            while(self.alignment_enable == True):
-                rclpy.spin_once(self)
-
-            self.rotate_mode = "flip"
-            self.rotate_enable = True
-            while(self.rotate_enable == True):
-                rclpy.spin_once(self)
-            gc.param = 2
-        else:
-            gc.param = 1
-        
+        gc.param = 2
         self.gc_pub.publish(gc)
 
         while(self.lift_progress != 'OK'):
