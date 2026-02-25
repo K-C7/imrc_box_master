@@ -44,6 +44,7 @@ class BoxMaster(Node):
         self.start_yaw = None
         self.target_yaw = None
         self.is_rotating = False
+        self.target_yaw = 0.0
 
         self.rotate_enable = False
 
@@ -134,16 +135,13 @@ class BoxMaster(Node):
             self.start_yaw = self.current_yaw
 
             # 180度 (π) 加算
-            # 角度を -π から π の範囲に正規化
             # self.target_yaw = self.start_yaw + math.pi
             
+            # 角度を -π から π の範囲に正規化
             # if self.target_yaw > math.pi:
             #     self.target_yaw -= 2 * math.pi
             # elif self.target_yaw < -math.pi:
             #     self.target_yaw += 2 * math.pi
-
-            # 脳筋でフィールドの角度に合わせる場合
-            self.target_yaw = math.pi
                 
             self.is_rotating = True
             self.get_logger().info(f'Start rotation! Target orientation is: {math.degrees(self.target_yaw):.2f} rad')
@@ -190,27 +188,29 @@ class BoxMaster(Node):
     
     
     def box_command_callback(self, goal_handle):
+        if(goal_handle.request.command.replace(".","").isdigit() == False):
+            self.get_logger().error("Action is invalid.")
+            return
+        
+        self.get_logger().info("Action is accepted. Target yaw is " + goal_handle.request.command)
+        self.target_yaw = float(goal_handle.request.command)
+        
+        self.rotate_enable = True
+        while(self.rotate_enable == True):
+            rclpy.spin_once(self)
+
+        self.alignment_enable = True
+        while(self.alignment_enable == True):
+            rclpy.spin_once(self)
+
+        self.target_yaw += math.pi
+        self.rotate_enable = True
+        while(self.rotate_enable == True):
+            rclpy.spin_once(self)
+        
         gc = GeneralCommand()
         gc.target = "ball"
-        if(goal_handle.request.command == "ready"):
-            gc.param = 1
-        elif(goal_handle.request.command == "drop"):
-            print(self.target_dist)
-            self.get_logger().info('Drop action start!')
-            self.get_logger().info(f'Target Distance is {0}'.format(self.target_dist))
-            self.alignment_enable = True
-            self.rotate_enable = False
-            while(self.alignment_enable == True):
-                rclpy.spin_once(self)
-
-            self.alignment_enable = False
-            self.rotate_enable = True
-            while(self.rotate_enable == True):
-                rclpy.spin_once(self)
-            gc.param = 2
-        else:
-            gc.param = 1
-        
+        gc.param = 2
         self.gc_pub.publish(gc)
 
         while(self.lift_progress != 'OK'):
