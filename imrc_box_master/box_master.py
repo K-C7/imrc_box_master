@@ -187,6 +187,7 @@ class BoxMaster(Node):
             self.get_logger().error("Action is invalid.")
             return
         
+        self.get_logger().error("Action is accepted. Target yaw is " + goal_handle.request.command)
         self.target_yaw = float(goal_handle.request.command)
         
         self.rotate_enable = True
