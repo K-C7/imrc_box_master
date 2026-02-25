@@ -57,7 +57,7 @@ class BoxMaster(Node):
             self,
             BoxCommand,
             "box_master",
-            self.box_command_callback
+            self.box_command_callback,
         )
 
     
@@ -176,13 +176,13 @@ class BoxMaster(Node):
     # ------------------------- 上昇、アーム制御 -------------------------
 
     def lift_progress_callback(self, msg):
-        if(msg.target == "lift"):
+        if(msg.target == "ball"):
             self.lift_progress = msg.state
     
     
     def box_command_callback(self, goal_handle):
         gc = GeneralCommand()
-        gc.target = "lift"
+        gc.target = "ball"
         if(goal_handle.request.command == "ready"):
             gc.param = 1
         elif(goal_handle.request.command == "drop"):
@@ -195,8 +195,7 @@ class BoxMaster(Node):
                 rclpy.spin_once(self)
             gc.param = 2
         else:
-            self.logger.error("Action command is invalid. Given command is {0}".format(goal_handle.request.command))
-            gc.param = 3
+            gc.param = 1
         
         self.gc_pub.publish(gc)
 
