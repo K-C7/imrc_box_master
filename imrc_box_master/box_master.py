@@ -2,6 +2,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
 
+import time
+
 import math
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
@@ -183,14 +185,18 @@ class BoxMaster(Node):
     # ------------------------- 上昇、アーム制御 -------------------------
 
     def lift_progress_callback(self, msg):
-        if(msg.target == "ball"):
+        if(msg.target == "ball" and msg.param == "store"):
             self.lift_progress = msg.state
+        else:
+            self.lift_progress = "IDLE"
     
     
     def box_command_callback(self, goal_handle):
-        if(goal_handle.request.command.replace(".","").isdigit() == False):
-            self.get_logger().error("Action is invalid.")
-            return
+        # print("reqest command is:")
+        # print(goal_handle.request.command)
+        # if(goal_handle.request.command.replace(".","").isdigit() == False):
+        #     self.get_logger().error("Action is invalid.")
+        #     return
         
         self.get_logger().info("Action is accepted. Target yaw is " + goal_handle.request.command)
         self.target_yaw = float(goal_handle.request.command)
@@ -215,6 +221,16 @@ class BoxMaster(Node):
 
         while(self.lift_progress != 'OK'):
             rclpy.spin_once(self)
+        
+        twist = Twist()
+        twist.linear.x = 0.1
+        start_time = time.time()
+        while(time.time() - start_time < 1.0):
+            self.cmd_vel_pub.publish(twist)
+            time.sleep(0.1)
+        
+        twist.linear.x = 0.0
+        self.cmd_vel_pub.publish(twist)
         
         result = BoxCommand.Result()
         result.result = self.lift_progress
