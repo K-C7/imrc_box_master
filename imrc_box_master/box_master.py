@@ -23,14 +23,15 @@ class BoxMaster(Node):
 
         # -------------------- 位置合わせ config --------------------
         self.depth_sub = self.create_subscription(String, '/depth_status', self.depth_callback, 10)
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_uart', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_box', 10)
         self.distance = 0.0
         self.alignment_enable = False
         
-        self.target_dist = 0.37   # 目標距離 (m)
-        self.kp = 1.0            # 比例ゲイン (速度の強さ)
-        self.max_speed = 0.2     # 最大速度 (m/s) 制限用
-        self.dead_zone = 0.02    # 不感帯 (cm以内の誤差は無視して停止)
+        # self.target_dist = self.declare_parameter('target_dist', 0.35).value   # 目標距離 (m)
+        self.target_dist = 0.23   # 目標距離 (m)
+        self.kp = 0.3            # 比例ゲイン (速度の強さ)
+        self.max_speed = 0.10     # 最大速度 (m/s) 制限用
+        self.dead_zone = 0.01    # 不感帯 (cm以内の誤差は無視して停止)
         # -------------------- 位置合わせ config --------------------
 
 
@@ -79,8 +80,11 @@ class BoxMaster(Node):
             self.distance = float(msg.data) * 0.01
         else:
             # self.distance = 0.0
-            self.stop_robot()
-            self.get_logger().warn("Can't read depth sensor data! Stopping Robot.")
+            # self.stop_robot()
+            self.get_logger().warn("Can't read depth sensor data! Step backing Robot.")
+            twist = Twist()
+            twist.linear.x = -0.05
+            self.cmd_vel_pub.publish(twist)
             return
         
         d = self.distance
@@ -128,14 +132,18 @@ class BoxMaster(Node):
         # 最初の1回だけ、目標角度を設定
         if self.start_yaw is None:
             self.start_yaw = self.current_yaw
+
             # 180度 (π) 加算
-            self.target_yaw = self.start_yaw + math.pi
-            
             # 角度を -π から π の範囲に正規化
-            if self.target_yaw > math.pi:
-                self.target_yaw -= 2 * math.pi
-            elif self.target_yaw < -math.pi:
-                self.target_yaw += 2 * math.pi
+            # self.target_yaw = self.start_yaw + math.pi
+            
+            # if self.target_yaw > math.pi:
+            #     self.target_yaw -= 2 * math.pi
+            # elif self.target_yaw < -math.pi:
+            #     self.target_yaw += 2 * math.pi
+
+            # 脳筋でフィールドの角度に合わせる場合
+            self.target_yaw = math.pi
                 
             self.is_rotating = True
             self.get_logger().info(f'Start rotation! Target orientation is: {math.degrees(self.target_yaw):.2f} rad')
@@ -168,6 +176,7 @@ class BoxMaster(Node):
             # 停止
             twist.angular.z = 0.0
             self.cmd_vel_pub.publish(twist)
+            self.start_yaw = None
             self.is_rotating = False
             self.rotate_enable = False
             self.get_logger().info('Rotation complete!')
@@ -186,10 +195,15 @@ class BoxMaster(Node):
         if(goal_handle.request.command == "ready"):
             gc.param = 1
         elif(goal_handle.request.command == "drop"):
+            print(self.target_dist)
+            self.get_logger().info('Drop action start!')
+            self.get_logger().info(f'Target Distance is {0}'.format(self.target_dist))
             self.alignment_enable = True
+            self.rotate_enable = False
             while(self.alignment_enable == True):
                 rclpy.spin_once(self)
 
+            self.alignment_enable = False
             self.rotate_enable = True
             while(self.rotate_enable == True):
                 rclpy.spin_once(self)
