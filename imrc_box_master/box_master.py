@@ -128,8 +128,22 @@ class BoxMaster(Node):
         # 最初の1回だけ、目標角度を設定
         if self.start_yaw is None:
             self.start_yaw = self.current_yaw
+
+            if(self.rotate_mode == "flip"):
+                self.target_yaw = self.start_yaw + math.pi
+            elif(self.rotate_mode == "up"):
+                self.target_yaw = 0
+            elif(self.rotate_mode == "down"):
+                self.target_yaw = math.pi
+            elif(self.rotate_mode == "left"):
+                self.target_yaw = (math.pi / 2)
+            elif(self.rotate_mode == "down"):
+                self.target_yaw = (math.pi / 2) * 3
+            else:
+                self.target_yaw = self.start_yaw
+
             # 180度 (π) 加算
-            self.target_yaw = self.start_yaw + math.pi
+            # self.target_yaw = self.start_yaw + math.pi
             
             # 角度を -π から π の範囲に正規化
             if self.target_yaw > math.pi:
@@ -186,10 +200,16 @@ class BoxMaster(Node):
         if(goal_handle.request.command == "ready"):
             gc.param = 1
         elif(goal_handle.request.command == "drop"):
+            self.rotate_mode = "up"
+            self.rotate_enable = True
+            while(self.rotate_enable == True):
+                rclpy.spin_once(self)
+
             self.alignment_enable = True
             while(self.alignment_enable == True):
                 rclpy.spin_once(self)
 
+            self.rotate_mode = "flip"
             self.rotate_enable = True
             while(self.rotate_enable == True):
                 rclpy.spin_once(self)
