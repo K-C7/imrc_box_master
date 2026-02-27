@@ -26,7 +26,12 @@ class BoxMaster(Node):
 
         # パブリッシャー
         self.gc_pub = self.create_publisher(GeneralCommand, '/robot_command', 10, callback_group=self.cb_group)
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_box', 10, callback_group=self.cb_group)
+
+        self.debug = self.declare_parameter('debug', False)
+        if(self.debug.value == True):
+            self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_uart', 10, callback_group=self.cb_group)
+        else:
+            self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_box', 10, callback_group=self.cb_group)
 
         # サブスクライバー
         self.lift_progress = "IDLE"
@@ -38,14 +43,14 @@ class BoxMaster(Node):
         # -------------------- 各種フラグ・パラメータ --------------------
         self.distance = 0.0
         self.alignment_enable = False
-        self.target_dist = 0.23
-        self.kp_align = 0.3
-        self.max_speed = 0.10
-        self.dead_zone = 0.01
+        self.target_dist = 0.305
+        self.kp_align = 0.1
+        self.max_speed = 0.20
+        self.dead_zone = 0.02
 
         self.rotate_enable = False
-        self.kp_rotate = 1.5
-        self.tolerance = 0.02
+        self.kp_rotate = 0.5
+        self.tolerance = 0.001
         self.max_angular_vel = 0.2
 
         # -------------------- アクションサーバー --------------------
@@ -100,12 +105,13 @@ class BoxMaster(Node):
             self.stop_robot()
     
     def rotate_callback(self, msg):
-        error = msg.back_degree
+        error = -msg.back_angle
         twist = Twist()
         if abs(error) > self.tolerance:
             speed = self.kp_rotate * error
             speed = max(min(speed, self.max_angular_vel), -self.max_angular_vel)
             twist.angular.z = speed
+            self.get_logger().info('Rotating now. {0}'.format(error))
         else:
             twist.angular.z = 0.0
             self.rotate_enable = False
@@ -113,12 +119,13 @@ class BoxMaster(Node):
         self.cmd_vel_pub.publish(twist)
     
     def alignment_callback(self, msg):
-        error = msg.back_distance
+        error = msg.back_distance  - self.target_dist
         twist = Twist()
         if abs(error) > self.dead_zone:
+            self.get_logger().info('Alignment now. {0}'.format(error))
             speed = self.kp_align * error
             speed = max(min(speed, self.max_speed), -self.max_speed)
-            twist.linear.x = speed
+            twist.linear.x = -speed
         else:
             twist.linear.x = 0.0
             self.alignment_enable = False
@@ -162,11 +169,12 @@ class BoxMaster(Node):
         self.get_logger().info("Moving backward...")
         twist = Twist()
         twist.linear.x = 0.1
+        rate = self.create_rate(10)
         for _ in range(10):
             if not rclpy.ok() or goal_handle.is_cancel_requested:
                 return self.handle_exit(goal_handle)
             self.cmd_vel_pub.publish(twist)
-            time.sleep(0.1)
+            rate.sleep()
         
         self.stop_robot()
         
