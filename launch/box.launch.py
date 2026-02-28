@@ -14,7 +14,7 @@ def generate_launch_description():
         package='ros_angle_judgement',
         executable='angle_judgement',
         name='angle_judgement',
-        arguments=['--ros-args', '--log-level', 'info'],
+        arguments=['--ros-args', '--log-level', 'warn'],
 
     )
 

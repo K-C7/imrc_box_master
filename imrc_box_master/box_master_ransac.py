@@ -4,6 +4,8 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 
+import asyncio # asyncio.sleep用
+
 import time
 import math
 from enum import Enum
@@ -45,27 +47,30 @@ class BoxMaster(Node):
         self.complete_sub = self.create_subscription(
             RobotActionProgress, '/robot_progress', self.lift_progress_callback, 10, callback_group=self.cb_group)
         
-        self.wall_sub = self.create_subscription(WallInfo, "/wall", self.wall_callback, 10, callback_group=self.cb_group)
-        self.wall_sub = self.create_subscription(WallInfo, "/wall_raw", self.wall_raw_callback, 10, callback_group=self.cb_group)
+        self.wall_sub = self.create_subscription(WallInfo, "/wall_filtered", self.wall_filtered_callback, 10, callback_group=self.cb_group)
+        self.wall_raw_sub = self.create_subscription(WallInfo, "/wall_raw", self.wall_raw_callback, 10, callback_group=self.cb_group)
 
         # -------------------- 各種フラグ・パラメータ --------------------
         self.DISTANCE_BOX = 0.325
         self.DISTANCE_WALL_SIDE_SHORT = 1.180
-        self.DISTANCE_WALL_SIDE_LONG = 1.712
+        self.DISTANCE_WALL_SIDE_LONG = 1.710
 
-        self.source_direction = Direction.BACK
-        self.distance = 0.0
-        self.alignment_enable = False
-        self.isMovingForward = False
-        self.target_dist = self.DISTANCE_WALL_SIDE_SHORT
         self.kp_align = 0.80
         self.max_speed = 0.20
         self.dead_zone = 0.03
 
-        self.rotate_enable = False
         self.kp_rotate = 0.3
-        self.tolerance = 0.010
         self.max_angular_vel = 0.3
+        self.tolerance = 0.010
+        
+        self.source_direction = Direction.BACK
+        self.useRaw = False
+        self.distance = 0.0
+        self.target_dist = self.DISTANCE_WALL_SIDE_SHORT
+        self.alignment_enable = False
+        self.isMovingForward = False
+
+        self.rotate_enable = False
 
         # -------------------- アクションサーバー --------------------
         self.action_server = ActionServer(
@@ -103,15 +108,15 @@ class BoxMaster(Node):
         if msg.target == "ball" and msg.param == "store":
             self.get_logger().info(f"Received robot progress: {msg.state}")
             self.lift_progress = msg.state
-        else:
-            self.lift_progress = "IDLE"
+        # else:
+        #     self.lift_progress = "IDLE"
 
-    def wall_callback(self, msg): 
+    def wall_filtered_callback(self, msg): 
         # ノード終了時は何もしない
         if not rclpy.ok():
             return
 
-        if(self.target_dist == self.DISTANCE_WALL_SIDE_LONG):
+        if self.useRaw:
             return
 
         distance = 0.00
@@ -147,7 +152,7 @@ class BoxMaster(Node):
         if not rclpy.ok():
             return
 
-        if not(self.target_dist == self.DISTANCE_WALL_SIDE_LONG):
+        if not self.useRaw:
             return
 
         distance = 0.00
@@ -193,6 +198,8 @@ class BoxMaster(Node):
         self.cmd_vel_pub.publish(twist)
     
     def alignment_callback(self, distance):
+        if(distance == 0.0):
+            return
         error = distance  - self.target_dist
         twist = Twist()
         if abs(error) > self.dead_zone:
@@ -209,6 +216,7 @@ class BoxMaster(Node):
                 twist.linear.y = -speed
         else:
             twist.linear.x = 0.0
+            twist.linear.y = 0.0
             self.alignment_enable = False
             self.get_logger().info('Target distance reached.')
         self.cmd_vel_pub.publish(twist)
@@ -223,11 +231,15 @@ class BoxMaster(Node):
             return BoxCommand.Result()
         
         self.get_logger().info(f"Action accepted. Command: {goal_handle.request.command}")
-
+        self.lift_progress = "IDLE"
+        
         # 1. 指定角度への回転
         self.source_direction = Direction.BACK
         self.target_dist = self.DISTANCE_BOX
+        self.useRaw = False
         self.rotate_enable = True
+        await asyncio.sleep(0.2)
+
         if not self.wait_for_flag(lambda: self.rotate_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
         
@@ -237,15 +249,20 @@ class BoxMaster(Node):
             self.target_dist = self.DISTANCE_WALL_SIDE_LONG
         else:
             self.target_dist = self.DISTANCE_WALL_SIDE_SHORT
-
+        self.useRaw = True
         self.alignment_enable = True
+        await asyncio.sleep(0.2)
+
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
         
         # 2. ダンボールとの距離合わせ
         self.source_direction = Direction.BACK
         self.target_dist = self.DISTANCE_BOX
+        self.useRaw = False
         self.alignment_enable = True
+        await asyncio.sleep(0.2)
+
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
 
@@ -256,6 +273,7 @@ class BoxMaster(Node):
         self.gc_pub.publish(gc)
 
         # 4. リフト完了待ち
+        await asyncio.sleep(0.2)
         if not self.wait_for_flag(lambda: self.lift_progress, 'OK', goal_handle):
             return self.handle_exit(goal_handle)
 
@@ -263,14 +281,13 @@ class BoxMaster(Node):
         self.get_logger().info("Moving forward...")
         twist = Twist()
         twist.linear.x = 0.2
-        rate = self.create_rate(10)
         self.isMovingForward = True
         for _ in range(10):
             if not rclpy.ok() or goal_handle.is_cancel_requested:
                 return self.handle_exit(goal_handle)
             self.cmd_vel_pub.publish(twist)
-            rate.sleep()
-        
+            await asyncio.sleep(0.1)
+
         self.isMovingForward = False
         self.stop_robot()
         self.get_logger().info("Box action done.")
@@ -281,15 +298,13 @@ class BoxMaster(Node):
         self.lift_progress = "IDLE"
         goal_handle.succeed()
         return result
-
-    def wait_for_flag(self, get_flag_func, target_value, goal_handle):
-        """フラグ待ちループ。ROS終了・キャンセル・目標達成のいずれかで抜ける"""
+    
+    async def wait_for_flag(self, get_flag_func, target_value, goal_handle):
+        """asyncio.sleepを使用した非ブロッキング待機"""
         while rclpy.ok() and get_flag_func() != target_value:
-            rate = self.create_rate(100)
             if goal_handle.is_cancel_requested:
                 return False
-            rate.sleep()
-        # 目標に達しており、かつROSが正常ならTrue、それ以外（キャンセル等）はFalse
+            await asyncio.sleep(0.05) # 20Hzでチェック
         return rclpy.ok() and not goal_handle.is_cancel_requested
 
     def handle_exit(self, goal_handle):
