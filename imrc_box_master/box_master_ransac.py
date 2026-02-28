@@ -4,8 +4,6 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 
-import asyncio # asyncio.sleep用
-
 import time
 import math
 from enum import Enum
@@ -223,7 +221,7 @@ class BoxMaster(Node):
 
     # ------------------------- アクション実行メイン -------------------------
 
-    async def box_command_callback(self, goal_handle):
+    def box_command_callback(self, goal_handle):
         
         if not (goal_handle.request.command == "LONG" or goal_handle.request.command == "SHORT"):
             self.get_logger().error(f"Action aborted because of invalid command. Command: {goal_handle.request.command}")
@@ -238,7 +236,7 @@ class BoxMaster(Node):
         self.target_dist = self.DISTANCE_BOX
         self.useRaw = False
         self.rotate_enable = True
-        await asyncio.sleep(0.2)
+        time.sleep(0.2)
 
         if not self.wait_for_flag(lambda: self.rotate_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
@@ -251,7 +249,7 @@ class BoxMaster(Node):
             self.target_dist = self.DISTANCE_WALL_SIDE_SHORT
         self.useRaw = True
         self.alignment_enable = True
-        await asyncio.sleep(0.2)
+        time.sleep(0.2)
 
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
@@ -261,7 +259,7 @@ class BoxMaster(Node):
         self.target_dist = self.DISTANCE_BOX
         self.useRaw = False
         self.alignment_enable = True
-        await asyncio.sleep(0.2)
+        time.sleep(0.2)
 
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
@@ -273,7 +271,7 @@ class BoxMaster(Node):
         self.gc_pub.publish(gc)
 
         # 4. リフト完了待ち
-        await asyncio.sleep(0.2)
+        time.sleep(0.2)
         if not self.wait_for_flag(lambda: self.lift_progress, 'OK', goal_handle):
             return self.handle_exit(goal_handle)
 
@@ -286,7 +284,7 @@ class BoxMaster(Node):
             if not rclpy.ok() or goal_handle.is_cancel_requested:
                 return self.handle_exit(goal_handle)
             self.cmd_vel_pub.publish(twist)
-            await asyncio.sleep(0.1)
+            time.sleep(0.1)
 
         self.isMovingForward = False
         self.stop_robot()
@@ -299,12 +297,12 @@ class BoxMaster(Node):
         goal_handle.succeed()
         return result
     
-    async def wait_for_flag(self, get_flag_func, target_value, goal_handle):
+    def wait_for_flag(self, get_flag_func, target_value, goal_handle):
         """asyncio.sleepを使用した非ブロッキング待機"""
         while rclpy.ok() and get_flag_func() != target_value:
             if goal_handle.is_cancel_requested:
                 return False
-            await asyncio.sleep(0.05) # 20Hzでチェック
+            time.sleep(0.05) # 20Hzでチェック
         return rclpy.ok() and not goal_handle.is_cancel_requested
 
     def handle_exit(self, goal_handle):
