@@ -49,19 +49,19 @@ class BoxMaster(Node):
         self.wall_raw_sub = self.create_subscription(WallInfo, "/wall_raw", self.wall_raw_callback, 10, callback_group=self.cb_group)
 
         # -------------------- 各種フラグ・パラメータ --------------------
-        self.DISTANCE_BOX = 0.325
-        self.DISTANCE_WALL_SIDE_SHORT = 1.180
+        self.DISTANCE_BOX = 0.305
+        self.DISTANCE_WALL_SIDE_SHORT = 1.170
         self.DISTANCE_WALL_SIDE_LONG = 1.710
 
-        self.kp_align = 0.80
-        self.max_speed = 0.20
+        self.kp_align = 1.0
+        self.max_speed = 1.500
         self.min_speed = 0.04
-        self.dead_zone = 0.03
+        self.dead_zone = 0.02
 
-        self.kp_rotate = 0.3
-        self.max_angular_vel = 0.3
+        self.kp_rotate = 2.0
+        self.max_angular_vel = 3.0
         self.min_angular_vel = 0.04
-        self.tolerance = 0.010
+        self.tolerance = 0.005
         
         self.source_direction = Direction.BACK
         self.useRaw = False
@@ -189,8 +189,9 @@ class BoxMaster(Node):
         if abs(error) > self.tolerance:
             speed = self.kp_rotate * error
             speed = max(min(speed, self.max_angular_vel), -self.max_angular_vel)
-            twist.angular.z = max(speed, self.min_angular_vel)
-            self.get_logger().debug('Rotating now. {0}'.format(error))
+            # twist.angular.z = max(speed, self.min_angular_vel)
+            twist.angular.z = speed
+            self.get_logger().info('Rotating now. {0}'.format(error))
         else:
             twist.angular.z = 0.0
             self.rotate_enable = False
@@ -203,10 +204,10 @@ class BoxMaster(Node):
         error = distance  - self.target_dist
         twist = Twist()
         if abs(error) > self.dead_zone:
-            self.get_logger().debug('Alignment now. {0}'.format(error))
+            self.get_logger().info('Alignment now. {0}'.format(error))
             speed = self.kp_align * error
             speed = max(min(speed, self.max_speed), -self.max_speed)
-            speed = max(speed, self.min_speed)
+            # speed = max(speed, self.min_speed)
             if(self.source_direction == Direction.FRONT):
                 twist.linear.x = speed
             elif(self.source_direction == Direction.BACK):
