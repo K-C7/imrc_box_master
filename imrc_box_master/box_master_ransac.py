@@ -55,10 +55,12 @@ class BoxMaster(Node):
 
         self.kp_align = 0.80
         self.max_speed = 0.20
+        self.min_speed = 0.04
         self.dead_zone = 0.03
 
         self.kp_rotate = 0.3
         self.max_angular_vel = 0.3
+        self.min_angular_vel = 0.04
         self.tolerance = 0.010
         
         self.source_direction = Direction.BACK
@@ -187,7 +189,7 @@ class BoxMaster(Node):
         if abs(error) > self.tolerance:
             speed = self.kp_rotate * error
             speed = max(min(speed, self.max_angular_vel), -self.max_angular_vel)
-            twist.angular.z = speed
+            twist.angular.z = max(speed, self.min_angular_vel)
             self.get_logger().debug('Rotating now. {0}'.format(error))
         else:
             twist.angular.z = 0.0
@@ -204,6 +206,7 @@ class BoxMaster(Node):
             self.get_logger().debug('Alignment now. {0}'.format(error))
             speed = self.kp_align * error
             speed = max(min(speed, self.max_speed), -self.max_speed)
+            speed = max(speed, self.min_speed)
             if(self.source_direction == Direction.FRONT):
                 twist.linear.x = speed
             elif(self.source_direction == Direction.BACK):
@@ -278,9 +281,9 @@ class BoxMaster(Node):
         # 5. 少し前進
         self.get_logger().info("Moving forward...")
         twist = Twist()
-        twist.linear.x = 0.2
+        twist.linear.x = 0.4
         self.isMovingForward = True
-        for _ in range(10):
+        for _ in range(5):
             if not rclpy.ok() or goal_handle.is_cancel_requested:
                 return self.handle_exit(goal_handle)
             self.cmd_vel_pub.publish(twist)
