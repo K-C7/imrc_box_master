@@ -50,8 +50,11 @@ class BoxMaster(Node):
 
         # -------------------- 各種フラグ・パラメータ --------------------
         self.DISTANCE_BOX = 0.305
-        self.DISTANCE_WALL_SIDE_SHORT = 1.170
-        self.DISTANCE_WALL_SIDE_LONG = 1.710
+        self.DISTANCE_WALL_SIDE_RED = 1.170
+        # 青の箱に横から行ってたときの距離
+        # self.DISTANCE_WALL_SIDE_BLUE = 1.710
+        self.DISTANCE_WALL_SIDE_BLUE = 1.930
+        self.DISTANCE_WALL_SIDE_YELLOW = 1.170
 
         self.kp_align = 1.0
         self.max_speed = 1.500
@@ -66,7 +69,7 @@ class BoxMaster(Node):
         self.source_direction = Direction.BACK
         self.useRaw = False
         self.distance = 0.0
-        self.target_dist = self.DISTANCE_WALL_SIDE_SHORT
+        self.target_dist = self.DISTANCE_WALL_SIDE_RED
         self.alignment_enable = False
         self.isMovingForward = False
 
@@ -225,46 +228,50 @@ class BoxMaster(Node):
 
     # ------------------------- アクション実行メイン -------------------------
 
+    def alignment_side(self, color, goal_handle):
+        if(color == "RED"):
+            self.source_direction = Direction.LEFT
+            self.target_dist = self.DISTANCE_WALL_SIDE_RED
+        elif(color == "BLUE"):
+            self.source_direction = Direction.LEFT
+            self.target_dist = self.DISTANCE_WALL_SIDE_BLUE
+        elif(color == "YELLOW"):
+            self.source_direction = Direction.RIGHT
+            self.target_dist = self.DISTANCE_WALL_SIDE_YELLOW
+
+        self.useRaw = True
+        self.alignment_enable = True
+        time.sleep(0.2)
+        if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
+            return self.handle_exit(goal_handle)
+
     def box_command_callback(self, goal_handle):
-        
-        if not (goal_handle.request.command == "LONG" or goal_handle.request.command == "SHORT"):
+        if not (goal_handle.request.command == "RED" or goal_handle.request.command == "BLUE" or goal_handle.request.command == "YELLOW"):
             self.get_logger().error(f"Action aborted because of invalid command. Command: {goal_handle.request.command}")
             goal_handle.abort()
             return BoxCommand.Result()
         
         self.get_logger().info(f"Action accepted. Command: {goal_handle.request.command}")
         self.lift_progress = "IDLE"
-        
+
         # 1. 指定角度への回転
         self.source_direction = Direction.BACK
         self.target_dist = self.DISTANCE_BOX
         self.useRaw = False
         self.rotate_enable = True
         time.sleep(0.2)
-
         if not self.wait_for_flag(lambda: self.rotate_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
         
         # 2. 横壁との距離合わせ
-        self.source_direction = Direction.RIGHT
-        if(goal_handle.request.command == "LONG"):
-            self.target_dist = self.DISTANCE_WALL_SIDE_LONG
-        else:
-            self.target_dist = self.DISTANCE_WALL_SIDE_SHORT
-        self.useRaw = True
-        self.alignment_enable = True
-        time.sleep(0.2)
+        self.alignment_side(goal_handle.request.command, goal_handle)
 
-        if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
-            return self.handle_exit(goal_handle)
-        
         # 2. ダンボールとの距離合わせ
         self.source_direction = Direction.BACK
         self.target_dist = self.DISTANCE_BOX
         self.useRaw = False
         self.alignment_enable = True
         time.sleep(0.2)
-
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
 
