@@ -241,17 +241,17 @@ class BoxMaster(Node):
 
         self.useRaw = True
         self.alignment_enable = True
-        time.sleep(0.2)
+        time.sleep(0.1)
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
 
     def box_command_callback(self, goal_handle):
-        if not (goal_handle.request.command == "RED" or goal_handle.request.command == "BLUE" or goal_handle.request.command == "YELLOW"):
-            self.get_logger().error(f"Action aborted because of invalid command. Command: {goal_handle.request.command}")
+        if not (goal_handle.request.color == "RED" or goal_handle.request.color == "BLUE" or goal_handle.request.color == "YELLOW"):
+            self.get_logger().error(f"Action aborted because of invalid command. Command: {goal_handle.request.color}")
             goal_handle.abort()
             return BoxCommand.Result()
         
-        self.get_logger().info(f"Action accepted. Command: {goal_handle.request.command}")
+        self.get_logger().info(f"Action accepted. Command: {goal_handle.request.color}")
         self.lift_progress = "IDLE"
 
         # 1. 指定角度への回転
@@ -259,19 +259,19 @@ class BoxMaster(Node):
         self.target_dist = self.DISTANCE_BOX
         self.useRaw = False
         self.rotate_enable = True
-        time.sleep(0.2)
+        time.sleep(0.1)
         if not self.wait_for_flag(lambda: self.rotate_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
         
         # 2. 横壁との距離合わせ
-        self.alignment_side(goal_handle.request.command, goal_handle)
+        self.alignment_side(goal_handle.request.color, goal_handle)
 
         # 2. ダンボールとの距離合わせ
         self.source_direction = Direction.BACK
         self.target_dist = self.DISTANCE_BOX
         self.useRaw = False
         self.alignment_enable = True
-        time.sleep(0.2)
+        time.sleep(0.1)
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
 
@@ -282,20 +282,21 @@ class BoxMaster(Node):
         self.gc_pub.publish(gc)
 
         # 4. リフト完了待ち
-        time.sleep(0.2)
+        time.sleep(0.1)
         if not self.wait_for_flag(lambda: self.lift_progress, 'OK', goal_handle):
             return self.handle_exit(goal_handle)
 
-        # 5. 少し前進
-        self.get_logger().info("Moving forward...")
-        twist = Twist()
-        twist.linear.x = 0.4
-        self.isMovingForward = True
-        for _ in range(5):
-            if not rclpy.ok() or goal_handle.is_cancel_requested:
-                return self.handle_exit(goal_handle)
-            self.cmd_vel_pub.publish(twist)
-            time.sleep(0.1)
+        if(goal_handle.request.moveforward == True):
+            # 5. 少し前進
+            self.get_logger().info("Moving forward...")
+            twist = Twist()
+            twist.linear.x = 0.4
+            self.isMovingForward = True
+            for _ in range(5):
+                if not rclpy.ok() or goal_handle.is_cancel_requested:
+                    return self.handle_exit(goal_handle)
+                self.cmd_vel_pub.publish(twist)
+                time.sleep(0.1)
 
         self.isMovingForward = False
         self.stop_robot()
