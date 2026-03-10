@@ -148,6 +148,7 @@ class BoxMaster(Node):
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
 
+        self.lift_progress = "IDLE"
         # 3. ボール取得コマンド送信
         gc = GeneralCommand()
         gc.target = "ball"
@@ -155,7 +156,7 @@ class BoxMaster(Node):
         self.gc_pub.publish(gc)
 
         # 4. リフト完了待ち
-        if not self.wait_for_flag(lambda: self.lift_progress, 'OK', goal_handle):
+        if not self.wait_for_not_flag(lambda: self.lift_progress, 'IDLE', goal_handle):
             return self.handle_exit(goal_handle)
 
         # 5. 少し前進
@@ -180,6 +181,15 @@ class BoxMaster(Node):
     def wait_for_flag(self, get_flag_func, target_value, goal_handle):
         """フラグ待ちループ。ROS終了・キャンセル・目標達成のいずれかで抜ける"""
         while rclpy.ok() and get_flag_func() != target_value:
+            if goal_handle.is_cancel_requested:
+                return False
+            time.sleep(0.1)
+        # 目標に達しており、かつROSが正常ならTrue、それ以外（キャンセル等）はFalse
+        return rclpy.ok() and not goal_handle.is_cancel_requested
+    
+    def wait_for_not_flag(self, get_flag_func, target_value, goal_handle):
+        """フラグ待ちループ。ROS終了・キャンセル・目標達成のいずれかで抜ける"""
+        while rclpy.ok() and get_flag_func() == target_value:
             if goal_handle.is_cancel_requested:
                 return False
             time.sleep(0.1)
