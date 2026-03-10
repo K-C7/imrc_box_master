@@ -286,6 +286,15 @@ class BoxMaster(Node):
         time.sleep(0.1)
         if not self.wait_for_not_flag(lambda: self.lift_progress, 'IDLE', goal_handle):
             return self.handle_exit(goal_handle)
+        
+        if(self.lift_progress == 'NG'):
+            self.lift_progress = "IDLE"
+            self.gc_pub.publish(gc)
+
+            # 4. リフト完了待ち
+            time.sleep(0.1)
+            if not self.wait_for_not_flag(lambda: self.lift_progress, 'IDLE', goal_handle):
+                return self.handle_exit(goal_handle)
 
         if(goal_handle.request.moveforward == True):
             # 5. 少し前進
