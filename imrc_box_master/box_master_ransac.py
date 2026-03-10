@@ -6,6 +6,7 @@ from rclpy.executors import MultiThreadedExecutor
 
 import time
 import math
+from enum import Enum
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
@@ -14,6 +15,12 @@ from imrc_messages.action import BoxCommand
 from imrc_messages.msg import GeneralCommand
 from imrc_messages.msg import RobotActionProgress
 from imrc_messages.msg import WallInfo
+
+class Direction(Enum):
+    FRONT = 1
+    BACK = 2
+    LEFT = 3
+    RIGHT = 4
 
 
 class BoxMaster(Node):
@@ -26,27 +33,47 @@ class BoxMaster(Node):
 
         # パブリッシャー
         self.gc_pub = self.create_publisher(GeneralCommand, '/robot_command', 10, callback_group=self.cb_group)
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_box', 10, callback_group=self.cb_group)
+
+        self.debug = self.declare_parameter('debug', False)
+        if(self.debug.value == True):
+            self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_uart', 10, callback_group=self.cb_group)
+        else:
+            self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_box', 10, callback_group=self.cb_group)
 
         # サブスクライバー
         self.lift_progress = "IDLE"
         self.complete_sub = self.create_subscription(
             RobotActionProgress, '/robot_progress', self.lift_progress_callback, 10, callback_group=self.cb_group)
         
-        self.wall_sub = self.create_subscription(WallInfo, "/wall", self.wall_callback, 10, callback_group=self.cb_group)
+        self.wall_sub = self.create_subscription(WallInfo, "/wall_filtered", self.wall_filtered_callback, 10, callback_group=self.cb_group)
+        self.wall_raw_sub = self.create_subscription(WallInfo, "/wall_raw", self.wall_raw_callback, 10, callback_group=self.cb_group)
 
         # -------------------- 各種フラグ・パラメータ --------------------
+        self.DISTANCE_BOX = 0.305
+        self.DISTANCE_WALL_SIDE_RED = 1.170
+        # 青の箱に横から行ってたときの距離
+        # self.DISTANCE_WALL_SIDE_BLUE = 1.710
+        self.DISTANCE_WALL_SIDE_BLUE = 1.930
+        self.DISTANCE_WALL_SIDE_YELLOW = 1.170
+
+        self.kp_align = 1.0
+        self.max_speed = 1.500
+        self.min_speed = 0.04
+        self.dead_zone = 0.02
+
+        self.kp_rotate = 2.0
+        self.max_angular_vel = 3.0
+        self.min_angular_vel = 0.04
+        self.tolerance = 0.005
+        
+        self.source_direction = Direction.BACK
+        self.useRaw = False
         self.distance = 0.0
+        self.target_dist = self.DISTANCE_WALL_SIDE_RED
         self.alignment_enable = False
-        self.target_dist = 0.23
-        self.kp_align = 0.3
-        self.max_speed = 0.10
-        self.dead_zone = 0.01
+        self.isMovingForward = False
 
         self.rotate_enable = False
-        self.kp_rotate = 1.5
-        self.tolerance = 0.02
-        self.max_angular_vel = 0.2
 
         # -------------------- アクションサーバー --------------------
         self.action_server = ActionServer(
@@ -84,67 +111,167 @@ class BoxMaster(Node):
         if msg.target == "ball" and msg.param == "store":
             self.get_logger().info(f"Received robot progress: {msg.state}")
             self.lift_progress = msg.state
-        else:
-            self.lift_progress = "IDLE"
+        # else:
+        #     self.lift_progress = "IDLE"
 
-    def wall_callback(self, msg): 
+    def wall_filtered_callback(self, msg): 
         # ノード終了時は何もしない
         if not rclpy.ok():
             return
 
+        if self.useRaw:
+            return
+
+        distance = 0.00
+        angle = 0.00
+
+        
+        if(self.source_direction == Direction.FRONT):
+            distance = msg.front_distance
+            angle = msg.front_angle
+        elif(self.source_direction == Direction.BACK):
+            distance = msg.back_distance
+            angle = msg.back_angle - 0.040
+        elif(self.source_direction == Direction.LEFT):
+            distance = msg.left_distance
+            angle = msg.left_angle
+        elif(self.source_direction == Direction.RIGHT):
+            distance = msg.right_distance
+            angle = msg.right_angle
+        else:
+            pass
+
         if self.alignment_enable:
-            self.alignment_callback(msg)
+            self.alignment_callback(distance)
         elif self.rotate_enable:
-            self.rotate_callback(msg)
+            self.rotate_callback(angle)
+        elif self.isMovingForward:
+            pass
         else:
             self.stop_robot()
     
-    def rotate_callback(self, msg):
-        error = msg.back_degree
+    def wall_raw_callback(self, msg): 
+        # ノード終了時は何もしない
+        if not rclpy.ok():
+            return
+
+        if not self.useRaw:
+            return
+
+        distance = 0.00
+        angle = 0.00
+
+        
+        if(self.source_direction == Direction.FRONT):
+            distance = msg.front_distance
+            angle = msg.front_angle
+        elif(self.source_direction == Direction.BACK):
+            distance = msg.back_distance
+            angle = msg.back_angle
+        elif(self.source_direction == Direction.LEFT):
+            distance = msg.left_distance
+            angle = msg.left_angle
+        elif(self.source_direction == Direction.RIGHT):
+            distance = msg.right_distance
+            angle = msg.right_angle
+        else:
+            pass
+
+        if self.alignment_enable:
+            self.alignment_callback(distance)
+        elif self.rotate_enable:
+            self.rotate_callback(angle)
+        elif self.isMovingForward:
+            pass
+        else:
+            self.stop_robot()
+    
+    def rotate_callback(self, error):
+        error = -error
         twist = Twist()
         if abs(error) > self.tolerance:
             speed = self.kp_rotate * error
             speed = max(min(speed, self.max_angular_vel), -self.max_angular_vel)
+            # twist.angular.z = max(speed, self.min_angular_vel)
             twist.angular.z = speed
+            self.get_logger().info('Rotating now. {0}'.format(error))
         else:
             twist.angular.z = 0.0
             self.rotate_enable = False
             self.get_logger().info('Rotation complete!')
         self.cmd_vel_pub.publish(twist)
     
-    def alignment_callback(self, msg):
-        error = msg.back_distance
+    def alignment_callback(self, distance):
+        if(distance == 0.0):
+            return
+        error = distance  - self.target_dist
         twist = Twist()
         if abs(error) > self.dead_zone:
+            self.get_logger().info('Alignment now. {0}'.format(error))
             speed = self.kp_align * error
             speed = max(min(speed, self.max_speed), -self.max_speed)
-            twist.linear.x = speed
+            # speed = max(speed, self.min_speed)
+            if(self.source_direction == Direction.FRONT):
+                twist.linear.x = speed
+            elif(self.source_direction == Direction.BACK):
+                twist.linear.x = -speed
+            elif(self.source_direction == Direction.LEFT):
+                twist.linear.y = speed
+            elif(self.source_direction == Direction.RIGHT):
+                twist.linear.y = -speed
         else:
             twist.linear.x = 0.0
+            twist.linear.y = 0.0
             self.alignment_enable = False
             self.get_logger().info('Target distance reached.')
         self.cmd_vel_pub.publish(twist)
 
     # ------------------------- アクション実行メイン -------------------------
 
-    async def box_command_callback(self, goal_handle):
-        self.get_logger().info(f"Action accepted. Target yaw: {goal_handle.request.command}")
-        
-        try:
-            # ここでは目標角度を受け取るだけで、実際の回転はrotate_callbackで行う構成と推測
-            # self.target_yaw は wall_callback 側で参照されるべき
-            pass 
-        except ValueError:
+    def alignment_side(self, color, goal_handle):
+        if(color == "RED"):
+            self.source_direction = Direction.LEFT
+            self.target_dist = self.DISTANCE_WALL_SIDE_RED
+        elif(color == "BLUE"):
+            self.source_direction = Direction.LEFT
+            self.target_dist = self.DISTANCE_WALL_SIDE_BLUE
+        elif(color == "YELLOW"):
+            self.source_direction = Direction.RIGHT
+            self.target_dist = self.DISTANCE_WALL_SIDE_YELLOW
+
+        self.useRaw = True
+        self.alignment_enable = True
+        time.sleep(0.1)
+        if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
+            return self.handle_exit(goal_handle)
+
+    def box_command_callback(self, goal_handle):
+        if not (goal_handle.request.color == "RED" or goal_handle.request.color == "BLUE" or goal_handle.request.color == "YELLOW"):
+            self.get_logger().error(f"Action aborted because of invalid command. Command: {goal_handle.request.color}")
             goal_handle.abort()
             return BoxCommand.Result()
         
+        self.get_logger().info(f"Action accepted. Command: {goal_handle.request.color}")
+        self.lift_progress = "IDLE"
+
         # 1. 指定角度への回転
+        self.source_direction = Direction.BACK
+        self.target_dist = self.DISTANCE_BOX
+        self.useRaw = False
         self.rotate_enable = True
+        time.sleep(0.1)
         if not self.wait_for_flag(lambda: self.rotate_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
         
-        # 2. 距離合わせ
+        # 2. 横壁との距離合わせ
+        self.alignment_side(goal_handle.request.color, goal_handle)
+
+        # 2. ダンボールとの距離合わせ
+        self.source_direction = Direction.BACK
+        self.target_dist = self.DISTANCE_BOX
+        self.useRaw = False
         self.alignment_enable = True
+        time.sleep(0.1)
         if not self.wait_for_flag(lambda: self.alignment_enable, False, goal_handle):
             return self.handle_exit(goal_handle)
 
@@ -156,20 +283,25 @@ class BoxMaster(Node):
         self.gc_pub.publish(gc)
 
         # 4. リフト完了待ち
+        time.sleep(0.1)
         if not self.wait_for_not_flag(lambda: self.lift_progress, 'IDLE', goal_handle):
             return self.handle_exit(goal_handle)
 
-        # 5. 少し前進
-        self.get_logger().info("Moving backward...")
-        twist = Twist()
-        twist.linear.x = 0.1
-        for _ in range(10):
-            if not rclpy.ok() or goal_handle.is_cancel_requested:
-                return self.handle_exit(goal_handle)
-            self.cmd_vel_pub.publish(twist)
-            time.sleep(0.1)
-        
+        if(goal_handle.request.moveforward == True):
+            # 5. 少し前進
+            self.get_logger().info("Moving forward...")
+            twist = Twist()
+            twist.linear.x = 0.4
+            self.isMovingForward = True
+            for _ in range(5):
+                if not rclpy.ok() or goal_handle.is_cancel_requested:
+                    return self.handle_exit(goal_handle)
+                self.cmd_vel_pub.publish(twist)
+                time.sleep(0.1)
+
+        self.isMovingForward = False
         self.stop_robot()
+        self.get_logger().info("Box action done.")
         
         # 成功終了
         result = BoxCommand.Result()
@@ -177,14 +309,13 @@ class BoxMaster(Node):
         self.lift_progress = "IDLE"
         goal_handle.succeed()
         return result
-
+    
     def wait_for_flag(self, get_flag_func, target_value, goal_handle):
-        """フラグ待ちループ。ROS終了・キャンセル・目標達成のいずれかで抜ける"""
+        """asyncio.sleepを使用した非ブロッキング待機"""
         while rclpy.ok() and get_flag_func() != target_value:
             if goal_handle.is_cancel_requested:
                 return False
-            time.sleep(0.1)
-        # 目標に達しており、かつROSが正常ならTrue、それ以外（キャンセル等）はFalse
+            time.sleep(0.05) # 20Hzでチェック
         return rclpy.ok() and not goal_handle.is_cancel_requested
     
     def wait_for_not_flag(self, get_flag_func, target_value, goal_handle):
@@ -192,10 +323,9 @@ class BoxMaster(Node):
         while rclpy.ok() and get_flag_func() == target_value:
             if goal_handle.is_cancel_requested:
                 return False
-            time.sleep(0.1)
-        # 目標に達しており、かつROSが正常ならTrue、それ以外（キャンセル等）はFalse
+            time.sleep(0.05) # 20Hzでチェック
         return rclpy.ok() and not goal_handle.is_cancel_requested
-
+    
     def handle_exit(self, goal_handle):
         """中断時のクリーンアップ処理"""
         self.rotate_enable = False
