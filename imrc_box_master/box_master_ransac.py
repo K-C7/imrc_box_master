@@ -279,7 +279,12 @@ class BoxMaster(Node):
         # 3. ボール取得コマンド送信
         gc = GeneralCommand()
         gc.target = "ball"
-        gc.param = 2
+
+        if(goal_handle.request.moveforward == True):
+            gc.param = 2
+        else:
+            gc.param = 3
+            
         self.gc_pub.publish(gc)
 
         # 4. リフト完了待ち
